@@ -31,6 +31,8 @@ class PID {
    */
   double TotalError();
 
+  double getSteerValue();
+
  private:
   /**
    * PID Errors
@@ -45,6 +47,14 @@ class PID {
   double Kp;
   double Ki;
   double Kd;
+
+    /*
+  * Iterations total count and error variables
+  * accum_error is for monitoring purposes (could be reset), separate from the PID system internal variables.
+  */ 
+  long iter;
+  double accum_error;
+  double average_error;
 };
 
 #endif  // PID_H

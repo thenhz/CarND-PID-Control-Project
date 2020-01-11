@@ -8,6 +8,7 @@
 // for convenience
 using nlohmann::json;
 using std::string;
+using namespace std;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -30,13 +31,32 @@ string hasData(string s) {
   return "";
 }
 
-int main() {
+int main(int argc, char *argv[]) {
   uWS::Hub h;
 
   PID pid;
-  /**
-   * TODO: Initialize the pid variable.
-   */
+  double init_Kp;
+  double init_Ki;
+  double init_Kd;
+  
+  if (argc == 1) {
+  	cout << "one parameter" << endl;
+  	init_Kp = 1.09;
+  	init_Ki = 0;
+  	init_Kd = 27;
+  }
+  else if (argc == 4) {
+  	init_Kp = atof(argv[1]);
+  	init_Ki = atof(argv[2]);
+  	init_Kd = atof(argv[3]);
+  }
+  else {
+  	cerr << "ERROR in input parameters. USAGE1: pid USAGE2: pid Kp Ki Kd" << endl;
+    return -1;
+  }
+  cout << "Load values --- Kp= " << init_Kp << " , Ki= " << init_Ki << " , Kd= " << init_Kd
+  		<< endl;
+  pid.Init(init_Kp, init_Ki, init_Kd);
 
   h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, 
                      uWS::OpCode opCode) {
@@ -57,13 +77,11 @@ int main() {
           double speed = std::stod(j[1]["speed"].get<string>());
           double angle = std::stod(j[1]["steering_angle"].get<string>());
           double steer_value;
-          /**
-           * TODO: Calculate steering value here, remember the steering value is
-           *   [-1, 1].
-           * NOTE: Feel free to play around with the throttle and speed.
-           *   Maybe use another PID controller to control the speed!
-           */
-          
+
+          pid.UpdateError(cte);
+          steer_value = pid.getSteerValue();
+          //clip values 
+          steer_value = std::max(-1.0, std::min(steer_value, 1.0));
           // DEBUG
           std::cout << "CTE: " << cte << " Steering Value: " << steer_value 
                     << std::endl;
