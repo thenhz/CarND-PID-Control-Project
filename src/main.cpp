@@ -4,11 +4,33 @@
 #include <string>
 #include "json.hpp"
 #include "PID.h"
+#include "Twiddle.h"
 
 // for convenience
 using nlohmann::json;
 using std::string;
 using namespace std;
+
+// Starting values derived from multiple twiddle runs
+
+
+static const double SPEED_MAX = 100.0;
+static const double SPEED_MIN = 0.0;
+static const double THROTTLE_CEIL = 1.0;
+static const double THROTTLE_FLOOR = 0.45;
+
+static const double HIGH_CTE_THRESHOLD = 1.0;
+static const double THROTTLE_HIGH_CTE = 0.25;
+
+static const int SAMPLE_SIZE = 100;
+static const double MIN_TOLERANCE = 0.2;
+
+static const double LOW_TPS_THRESHOLD = 30;
+static const double LOW_TPS_THROTTLE_OFFSET = 0.2;
+
+static int count_ = 0;
+static bool low_tps_ = false;
+static bool achieved_tolerance_ = false;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -35,15 +57,22 @@ int main(int argc, char *argv[]) {
   uWS::Hub h;
 
   PID pid;
+  Twiddle twiddle;
+
   double init_Kp;
   double init_Ki;
   double init_Kd;
   
   if (argc == 1) {
   	cout << "one parameter" << endl;
-  	init_Kp = 1.09;
-  	init_Ki = 0;
-  	init_Kd = 27;
+
+/*     static const double START_KP = 0.15;
+static const double START_KI = 0.0004;
+static const double START_KD = 3; */
+
+  	init_Kp = 0.15;
+  	init_Ki = 0.0004;
+  	init_Kd = 3;
   }
   else if (argc == 4) {
   	init_Kp = atof(argv[1]);
@@ -56,9 +85,11 @@ int main(int argc, char *argv[]) {
   }
   cout << "Load values --- Kp= " << init_Kp << " , Ki= " << init_Ki << " , Kd= " << init_Kd
   		<< endl;
-  pid.Init(init_Kp, init_Ki, init_Kd);
 
-  h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, 
+  pid.Init(init_Kp, init_Ki, init_Kd);
+  twiddle.init(init_Kp, init_Ki, init_Kd);
+
+  h.onMessage([&pid, &twiddle](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, 
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -79,16 +110,46 @@ int main(int argc, char *argv[]) {
           double steer_value;
 
           pid.UpdateError(cte);
-          steer_value = pid.getSteerValue();
+          steer_value = pid.TotalError();
           //clip values 
           steer_value = std::max(-1.0, std::min(steer_value, 1.0));
-          // DEBUG
-          std::cout << "CTE: " << cte << " Steering Value: " << steer_value 
-                    << std::endl;
+
+          double throttle;
+          if (fabs(cte) > HIGH_CTE_THRESHOLD) {
+            // Go slow when the cte is high
+            throttle = THROTTLE_HIGH_CTE;
+          } else {
+            // Otherwise, use the inverse of the steering value as the throttle, with a max of 100
+            throttle = fmin(1 / fabs(steer_value), SPEED_MAX);
+
+            // Normalize the throttle value from [0, 100] to [0.45, 1.0]
+            throttle = ((THROTTLE_CEIL - THROTTLE_FLOOR) * (throttle - SPEED_MIN)) / (SPEED_MAX - SPEED_MIN) + THROTTLE_FLOOR;
+
+            // Slow down when the tps is low
+            if (low_tps_) {
+              throttle -= LOW_TPS_THROTTLE_OFFSET;
+            }
+          }
+
+          bool is_sample_period = (++count_ % SAMPLE_SIZE == 0);
+
+          // Twiddle the parameters until tolerance is met
+          if (!achieved_tolerance_) {
+            twiddle.incrementCount(cte);
+            if (is_sample_period) {
+              std::vector<double> params = twiddle.updateParams();
+              if (twiddle.getTolerance() < MIN_TOLERANCE) {
+                achieved_tolerance_ = true;
+              } else {
+                pid.Init(params[0], params[1], params[2]);
+              }
+            }
+          }
+          
 
           json msgJson;
           msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = 0.3;
+          msgJson["throttle"] = throttle;
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);

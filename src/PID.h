@@ -31,8 +31,6 @@ class PID {
    */
   double TotalError();
 
-  double getSteerValue();
-
  private:
   /**
    * PID Errors

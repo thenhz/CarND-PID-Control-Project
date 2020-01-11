@@ -36,13 +36,5 @@ void PID::UpdateError(double cte)
 
 double PID::TotalError()
 {
-  /**
-   * TODO: Calculate and return the total error
-   */
-  return 0.0; // TODO: Add your total error calc here!
-}
-
-double PID::getSteerValue()
-{
   return -Kp*p_error - Ki*i_error - Kd*d_error;
 }
