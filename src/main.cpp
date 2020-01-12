@@ -86,7 +86,7 @@ static const double START_KD = 3; */
   cout << "Load values --- Kp= " << init_Kp << " , Ki= " << init_Ki << " , Kd= " << init_Kd
   		<< endl;
 
-  pid.Init(init_Kp, init_Ki, init_Kd);
+  pid.Init(init_Kp, init_Ki, init_Kd, SAMPLE_SIZE);
   twiddle.init(init_Kp, init_Ki, init_Kd);
 
   h.onMessage([&pid, &twiddle](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, 
@@ -114,6 +114,7 @@ static const double START_KD = 3; */
           //clip values 
           steer_value = std::max(-1.0, std::min(steer_value, 1.0));
 
+          // let's try to set throttle
           double throttle;
           if (fabs(cte) > HIGH_CTE_THRESHOLD) {
             // Go slow when the cte is high
@@ -141,11 +142,17 @@ static const double START_KD = 3; */
               if (twiddle.getTolerance() < MIN_TOLERANCE) {
                 achieved_tolerance_ = true;
               } else {
-                pid.Init(params[0], params[1], params[2]);
+                pid.Init(params[0], params[1], params[2],SAMPLE_SIZE);
               }
             }
           }
           
+          pid.update_params(cte, speed, throttle);
+
+          if (is_sample_period) {
+            low_tps_ = (pid.getAveTps() < LOW_TPS_THRESHOLD);
+          }
+
 
           json msgJson;
           msgJson["steering_angle"] = steer_value;
