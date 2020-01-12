@@ -16,21 +16,16 @@ using namespace std;
 
 static const double SPEED_MAX = 100.0;
 static const double SPEED_MIN = 0.0;
-static const double THROTTLE_CEIL = 1.0;
-static const double THROTTLE_FLOOR = 0.45;
-
-static const double HIGH_CTE_THRESHOLD = 1.0;
-static const double THROTTLE_HIGH_CTE = 0.25;
+static const double THROTTLE_MAX = 1.0;
+static const double THROTTLE_MIN = 0.45;
+static const double HIGHEST_CTE = 1.0;
 
 static const int SAMPLE_SIZE = 100;
 static const double MIN_TOLERANCE = 0.2;
 
-static const double LOW_TPS_THRESHOLD = 30;
-static const double LOW_TPS_THROTTLE_OFFSET = 0.2;
+static bool achieved_tolerance_ = false;
 
 static int count_ = 0;
-static bool low_tps_ = false;
-static bool achieved_tolerance_ = false;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -66,10 +61,6 @@ int main(int argc, char *argv[]) {
   if (argc == 1) {
   	cout << "one parameter" << endl;
 
-/*     static const double START_KP = 0.15;
-static const double START_KI = 0.0004;
-static const double START_KD = 3; */
-
   	init_Kp = 0.15;
   	init_Ki = 0.0004;
   	init_Kd = 3;
@@ -86,7 +77,8 @@ static const double START_KD = 3; */
   cout << "Load values --- Kp= " << init_Kp << " , Ki= " << init_Ki << " , Kd= " << init_Kd
   		<< endl;
 
-  pid.Init(init_Kp, init_Ki, init_Kd, SAMPLE_SIZE);
+  pid.Init(init_Kp, init_Ki, init_Kd);
+  
   twiddle.init(init_Kp, init_Ki, init_Kd);
 
   h.onMessage([&pid, &twiddle](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, 
@@ -116,44 +108,25 @@ static const double START_KD = 3; */
 
           // let's try to set throttle
           double throttle;
-          if (fabs(cte) > HIGH_CTE_THRESHOLD) {
-            // Go slow when the cte is high
-            throttle = THROTTLE_HIGH_CTE;
-          } else {
-            // Otherwise, use the inverse of the steering value as the throttle, with a max of 100
-            throttle = fmin(1 / fabs(steer_value), SPEED_MAX);
+          throttle = THROTTLE_MAX * (HIGHEST_CTE - std::min(HIGHEST_CTE,fabs(cte))) ;          
+          // Normalize the throttle 
+          throttle = ((THROTTLE_MAX - THROTTLE_MIN) * (throttle - SPEED_MIN)) / (SPEED_MAX - SPEED_MIN) + THROTTLE_MIN;
 
-            // Normalize the throttle value from [0, 100] to [0.45, 1.0]
-            throttle = ((THROTTLE_CEIL - THROTTLE_FLOOR) * (throttle - SPEED_MIN)) / (SPEED_MAX - SPEED_MIN) + THROTTLE_FLOOR;
-
-            // Slow down when the tps is low
-            if (low_tps_) {
-              throttle -= LOW_TPS_THROTTLE_OFFSET;
-            }
-          }
-
-          bool is_sample_period = (++count_ % SAMPLE_SIZE == 0);
-
+          /*
           // Twiddle the parameters until tolerance is met
           if (!achieved_tolerance_) {
             twiddle.incrementCount(cte);
-            if (is_sample_period) {
+            if (++count_ % SAMPLE_SIZE == 0) {
               std::vector<double> params = twiddle.updateParams();
               if (twiddle.getTolerance() < MIN_TOLERANCE) {
                 achieved_tolerance_ = true;
               } else {
-                pid.Init(params[0], params[1], params[2],SAMPLE_SIZE);
+                pid.Init(params[0], params[1], params[2]);
               }
             }
           }
+          */
           
-          pid.update_params(cte, speed, throttle);
-
-          if (is_sample_period) {
-            low_tps_ = (pid.getAveTps() < LOW_TPS_THRESHOLD);
-          }
-
-
           json msgJson;
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle;
